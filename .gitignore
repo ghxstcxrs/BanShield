@@ -16,3 +16,22 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# Public exports still require review before deliberate publication
+banshield-public*.zip
+.public-export-*.zip
+
+# Sensitive browser network captures
+*.har
+
+# Private original emails and header derivatives
+*.eml
+*.headers.txt
+
+# Private analysis bundles and secrets
+evidence_manifest.json
+findings.json
+review_draft.md
+banshield-review-*/
+.env
+.env.*

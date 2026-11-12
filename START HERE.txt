@@ -1,0 +1,25 @@
+BANSHIELD
+
+FIRST TIME
+1. Install Python if it is not installed.
+2. Double-click Setup BanShield.bat to install dependencies.
+3. Double-click Open BanShield.bat.
+
+AFTER SETUP
+Use Open BanShield.bat. You do not need to open or edit the Python files.
+See README.md for the saving check, evidence collection, backups and optional AI setup.
+
+FOLDERS
+app = program code; keep this folder together with the launcher.
+data and account-logs = private saved evidence; do not upload these to GitHub.
+policies = your manually collected policy text and template.
+extras = older browser-version files and historical reference material; not needed for desktop startup.
+
+UPDATING
+Close BanShield and privately back up the whole folder first. Replace program files only;
+keep your data, account-logs, log-library.sqlite3 and manual policy text.
+Run Setup BanShield.bat again if requirements changed.
+
+TROUBLESHOOTING
+Open a terminal in this folder and run: python app\audit_log.py
+No program folder was renamed. Existing logs remain in their original locations.

@@ -1,0 +1,47 @@
+# Manually collected Roblox ToS and policies
+
+Copy this template to roblox_tos_and_policies.txt in this folder. Paste the complete official texts into all five sections, retaining headings, exceptions, geographic scope and deadlines. Replace Retrieved with the actual YYYY-MM-DD collection date; Effective is a published YYYY-MM-DD date or unknown. These files are manually prepared; BanShield performs no policy downloads.
+
+EU/DSA completeness checklist for your copied Appeals and Content Moderation pages:
+- Support Form pathway when a violation is not shown in Violations & Appeals.
+- General appeal deadline, review/duplicate restrictions, and account-owner requirements.
+- Additional EU rights: six-month appeal window after the initial moderation decision.
+- EU access to certified out-of-court dispute settlement bodies and any linked official list.
+- Applicable qualifications, report categories, and judicial-redress language when present.
+Do not replace the official text with this checklist. Applicability and legal enforceability require separate review.
+
+## [terms] Roblox Terms of Use
+Source: https://en.help.roblox.com/hc/en-us/articles/115004647846-Roblox-Terms-of-Use
+Retrieved: YYYY-MM-DD
+Effective: unknown
+Content:
+[PASTE THE COMPLETE OFFICIAL TEXT HERE]
+
+## [standards] Community Standards
+Source: https://about.roblox.com/community-standards
+Retrieved: YYYY-MM-DD
+Effective: unknown
+Content:
+[PASTE THE COMPLETE OFFICIAL TEXT HERE]
+
+## [appeals] Appeal Your Content or Account Moderation
+Source: https://en.help.roblox.com/hc/en-us/articles/360000245263-Appeal-Your-Content-or-Account-Moderation
+Retrieved: YYYY-MM-DD
+Effective: unknown
+Content:
+[PASTE THE COMPLETE OFFICIAL TEXT HERE]
+
+## [moderation] Content Moderation on Roblox
+Source: https://en.help.roblox.com/hc/en-us/articles/21416271342868-Content-Moderation-on-Roblox
+Retrieved: YYYY-MM-DD
+Effective: unknown
+Content:
+[PASTE THE COMPLETE OFFICIAL TEXT HERE]
+
+## [support] Contact Us
+Source: https://en.help.roblox.com/hc/en-us/articles/208448546-Contact-Us
+Retrieved: YYYY-MM-DD
+Effective: unknown
+Content:
+[PASTE THE COMPLETE OFFICIAL TEXT HERE]
+
