@@ -59,7 +59,7 @@ If any check fails, stop relying on that feature until the problem is resolved. 
 - **Your working folder is private evidence.** BanShield has no built-in password protection or encryption. Use a protected computer account, lock your screen, restrict shared-folder access, and use encrypted storage/backups where appropriate. Anyone able to read the folder can read its records.
 - **HAR and email files need special care.** They may contain login cookies, bearer tokens, addresses, IPs, private messages and attachments. Do not post them on GitHub or paste them into chat to troubleshoot. If a live credential is exposed, use the affected service's session/sign-out or credential-revocation controls; deleting the public file alone does not revoke it.
 - **Private backup is different from public export.** Export backup includes private originals. Public export omits them by default and strips metadata from deliberately selected derivative images. It does not automatically blur visible names, account handles, faces, emails or QR codes. Redact copies, review the JSON/timestamps and images, and keep originals private.
-- **A `.gitignore` is not an access control.** It does not remove files already committed, and manual browser uploads can bypass it. Review the actual upload list and archive contents. Publish source modules, requirements, README and policy instructions/templates—not `data`, `account-logs`, the log library, private analysis folders, credentials or backups.
+- **Check what you share.** Private backups can contain complete account records. Review the actual files before sharing them; a redacted screenshot does not make its original or backup private by itself.
 - **Share a purpose-specific copy.** For an attorney or other authorized reviewer, use a private transfer method and agree which originals are needed. For a public dataset, use Public export, inspect every included file, and deliberately upload only that reviewed derivative. BanShield does not publish files to GitHub for you.
 
 ### Back up the whole workspace when it matters
@@ -185,7 +185,6 @@ Use **Public export** for a reviewable public derivative, not **Export backup**.
 
 Optional images must be redacted and reviewed before selection. BanShield applies EXIF orientation and re-encodes a new RGB pixel buffer as PNG without original EXIF, XMP, text chunks, ICC profiles, or source filenames. Original files remain unchanged. Visible names, emails, faces, QR codes, account handles and other identifiers in the pixels are **not automatically redacted**. Selected derivatives receive new SHA-256 hashes. The review confirmation is required; the app saves a ZIP locally and never publishes it to GitHub.
 
-For GitHub source distribution, include `audit_log.py`, `privacy_tools.py`, `requirements.txt`, the launcher, this README, and `.gitignore`. Install dependencies with `python -m pip install -r requirements.txt`. Keep private backups and data folders out of the repository. Public datasets also require review before an intentional upload.
 
 ## Visual clusters and CSV statistics
 
@@ -197,7 +196,6 @@ The summary includes total entries, total submissions, hashable and unclustered 
 
 Cluster IDs are clean dataset-local labels such as `cluster-0001`, deterministic for the same membership. Adding or removing images can renumber them. Statistics apply to the selected log. Default exports refer to its private original attachments; optional reviewed public images are separate derivatives and do not silently replace the population being counted. Editing the JSON preview can change the exported statistics, so review them consistently.
 
-Include `visual_clusters.py` when publishing the source or installing BanShield from GitHub.
 
 ## Process existing attachments
 
@@ -213,7 +211,6 @@ The private viewer lists requests, HTTP status codes, client request start times
 
 Captures can include session credentials, cookies, private URLs, and account information. They stay in the selected log's `data/network/` folder and are included in **private backups only**. Public exports omit capture files and parsed content. Network evidence does not count as a visual submission or participate in image clustering. Captures are limited to 100 MB and 50,000 requests; the text viewer previews up to 1,000,000 characters per request. Originals and full parsed content remain in private storage.
 
-Include `network_evidence.py` with the other Python modules when distributing the program source.
 
 ## Original emails and SMTP headers
 
@@ -223,7 +220,7 @@ The private viewer retains Date headers, all Received hops in file order, DKIM-S
 
 Select an email timestamp and a separate logged event as the reference to calculate a signed elapsed interval in seconds. Negative intervals are flagged. Under-three-hour intervals are descriptive of the selected clocks only, not proof of automation or absence of human review. Save a comparison as an addendum to retain its selected sources, event ID, capture ID, timestamps and uncertainty. No “instant automation” verdict is generated.
 
-Email originals and pasted headers are SHA-256 hashed, stored in the selected log's private network-evidence folder, included in private backups, and excluded from public dataset exports. They may contain private addresses, IPs, bodies and attachments. The size limit is 100 MB. Include `email_evidence.py` when distributing the program source.
+Email originals and pasted headers are SHA-256 hashed, stored in the selected log's private network-evidence folder, included in private backups, and excluded from public dataset exports. They may contain private addresses, IPs, bodies and attachments. The size limit is 100 MB.
 
 ## Text-only evidence analysis backend
 
@@ -233,7 +230,7 @@ The evidence bundle contains text only: `evidence_manifest.json` and `roblox_tos
 
 Policy text must now be collected manually. BanShield never downloads policies. Open the official links in `policies/roblox_tos_and_policies.template.txt`, copy the full text into its five sections, record the actual retrieval dates and known effective dates, then save a UTF-8 plain text copy as **`policies/roblox_tos_and_policies.txt`**. Each section requires `Source:`, `Retrieved: YYYY-MM-DD`, `Effective: YYYY-MM-DD` (or `unknown`), and `Content:` followed by the policy text. All five IDs — `[terms]`, `[standards]`, `[appeals]`, `[moderation]`, `[support]` — are required exactly once.
 
-The analysis dialog reads that exact file when opened. **Open policy folder** shows its location; **Reload policy file** reads changes; **Import manual policy** validates and copies an externally prepared `.txt` file into the folder. The policy tab is read-only; edit the local file and reload. Missing files, invalid dates, non-official source URL domains, duplicate/missing sections, and unfilled templates block analysis. Format checks do not authenticate the text or ensure its completeness. A policy changed on disk must be reloaded and reviewed before API submission. PDF, raw HTML and DOCX are not accepted; extract/copy their text into the template manually. Current policies may differ from those applicable at an event's date or in a user's jurisdiction. The old generated summary is retained as `legacy-policy-summary-reference.md` for reference and is not loaded.
+The analysis dialog reads that exact file when opened. **Open policy folder** shows its location; **Reload policy file** reads changes; **Import manual policy** validates and copies an externally prepared `.txt` file into the folder. The policy tab is read-only; edit the local file and reload. Missing files, invalid dates, non-official source URL domains, duplicate/missing sections, and unfilled templates block analysis. Format checks do not authenticate the text or ensure its completeness. A policy changed on disk must be reloaded and reviewed before API submission. PDF, raw HTML and DOCX are not accepted; extract/copy their text into the template manually. Current policies may differ from those applicable at an event's date or in a user's jurisdiction.
 
 Install dependencies from `requirements.txt`. Set `OPENAI_API_KEY` in the process environment before launching (do not put it in source, a public repository, or the evidence bundle). Enter a Structured Outputs-capable model ID available to your API account; optionally set `BANSHIELD_OPENAI_MODEL`. The app does not embed a default model or API key. API access and billing are separate from this application.
 
@@ -243,7 +240,6 @@ Results distinguish documented facts, possible policy inconsistencies and insuff
 
 Successful results are saved under the selected log's `data/analysis/<run-id>/` with exact reviewed input texts, their hashes, model/response identifiers, `findings.json` and `review_draft.md`. **Save reviewed bundle** exports a private review folder and schema even without API access. The Markdown is a draft for human or attorney review, not a certified legal report. Analysis cache and report folders should be copied separately if preserving full analysis runs; per-log evidence ZIP backups do not include them.
 
-Include `analysis_backend.py`, `analysis_ui.py`, `policy_files.py`, the `policies/` instructions and template, and the updated `requirements.txt` alongside all previous modules when distributing source. The API path was tested using mocked responses; no live request was made during implementation.
 
 Official references: https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses and the source URLs inside `roblox_tos_and_policies.txt`.
 
@@ -260,11 +256,11 @@ Structured findings now require a rubric band, rationale, verbatim policy excerp
 
 The application checks literal excerpts of at least 20 characters against cited evidence and policy sections. A failure downgrades the finding to weak/unsupported. These checks establish textual linkage only: they do not establish that the quote proves the conclusion, that OCR is accurate, that a source is authentic, or that policy exceptions do not apply. Rubric bands and substantive reasoning still require human verification. A rapid email response or a zero-rule notice alone does not prove a policy contradiction, automation, bad faith, or absence of human intervention.
 
-The default findings view and Markdown review report show scores of at least 40. All findings, requested bands, adjusted scores, rationale, and downgrade reasons remain in private findings.json for auditability. The unfiltered model summary is retained in JSON rather than copied into the filtered report. Scores do not represent legal success likelihood, admissibility, or a lawyer's assessment. New analyses use this rubric; previously saved reports are not rewritten. Include evidence_rubric.py in source distribution.
+The default findings view and Markdown review report show scores of at least 40. All findings, requested bands, adjusted scores, rationale, and downgrade reasons remain in private findings.json for auditability. The unfiltered model summary is retained in JSON rather than copied into the filtered report. Scores do not represent legal success likelihood, admissibility, or a lawyer's assessment. New analyses use this rubric; previously saved reports are not rewritten.
 
 ## Pydantic validation
 
-`analysis_models.py` defines strict Pydantic v2 models for API findings and application-scored findings. The API JSON Schema is generated from those models. Missing fields, extra fields, invalid rubric bands, and wrong types are rejected without coercion. Raw JSON is parsed and validated by Pydantic, followed by the existing JSON Schema and citation checks. A second Pydantic pass verifies the deterministic rubric score and report-inclusion threshold after scoring. Refusals, incomplete responses, and transport failures still use the existing error paths; Pydantic does not guarantee factual accuracy or successful API calls. Include `analysis_models.py` and the updated `requirements.txt` when distributing source.
+`analysis_models.py` defines strict Pydantic v2 models for API findings and application-scored findings. The API JSON Schema is generated from those models. Missing fields, extra fields, invalid rubric bands, and wrong types are rejected without coercion. Raw JSON is parsed and validated by Pydantic, followed by the existing JSON Schema and citation checks. A second Pydantic pass verifies the deterministic rubric score and report-inclusion threshold after scoring. Refusals, incomplete responses, and transport failures still use the existing error paths; Pydantic does not guarantee factual accuracy or successful API calls.
 
 
 ## Help Center policies and EU/DSA review
@@ -279,7 +275,7 @@ Each new TOSFinding requires `anticipated_corporate_defense` and `rebuttal`. The
 
 Successful analyses save `audit_report.json` plus an identical `findings.json` compatibility copy. SHA-256 is computed from the exact saved report bytes. `report_integrity.json` and `evidence_manifest.json` record that hash, the generation/recording timestamps, model and response ID, policy-text SHA-256 and frozen input-manifest SHA-256. `input_evidence_manifest.json` preserves the exact pre-analysis UTF-8 serialization used for its input hash, and the saved policy text preserves its original UTF-8 bytes/newlines. The report does not contain its own hash; post-analysis manifest records avoid circular hashing.
 
-A per-log `analysis_runs` SQLite index retains these records, and later manifest builds include them. The selected log's `data/evidence_manifest.json` is the latest analyzed manifest plus report provenance records, not an automatically updated snapshot of every future edit. Reports are stored under `data/analysis/<run-id>/`. Re-exporting a completed reviewed bundle includes its report hashes and frozen input. Existing reports are not retroactively hashed. Local timestamps and hashes do not independently prove generation time, authorship or tamper resistance if both records and files can be altered. Preserve report bundles and their recorded hashes separately when needed. Include `report_integrity.py` with the source distribution.
+A per-log `analysis_runs` SQLite index retains these records, and later manifest builds include them. The selected log's `data/evidence_manifest.json` is the latest analyzed manifest plus report provenance records, not an automatically updated snapshot of every future edit. Reports are stored under `data/analysis/<run-id>/`. Re-exporting a completed reviewed bundle includes its report hashes and frozen input. Existing reports are not retroactively hashed. Local timestamps and hashes do not independently prove generation time, authorship or tamper resistance if both records and files can be altered. Preserve report bundles and their recorded hashes separately when needed.
 
 
 ## Google Gemini as an alternative provider
@@ -300,10 +296,9 @@ Choose the provider, build/review the same policy and manifest text, and explici
 
 Gemini requests use its generateContent REST endpoint, a system instruction, text-only content, application/json response MIME type and a generated JSON Schema. Credentials are sent in the x-goog-api-key header, not the URL. Both providers use the same strict Pydantic validation, citation checks, rubric, defense/rebuttal fields, filtering and report-integrity records. Provider, requested model and returned model version when available are saved with results. Blocked, empty, unexpected or incomplete Gemini output is rejected. There are no automatic retries or cross-provider fallback. Live access still depends on model availability, schema support, key and quota.
 
-Include `gemini_provider.py` with the other program modules when distributing source. No additional SDK dependency is needed. Provider adapters and UI switching were tested with mocked API responses; no live provider call was made during implementation. Official API reference: https://ai.google.dev/api/generate-content.
 
 
-## Folder layout for users and source distribution
+## Where to find things
 
 ```text
 Open BanShield.bat     Launch the desktop app
@@ -316,13 +311,11 @@ policies/             Policy templates, instructions and manually supplied text
 data/                 Private original-log evidence and analysis outputs
 account-logs/         Private additional account logs
 log-library.sqlite3   Private log names and last selected log
-extras/               Legacy browser app and historical reference material
 ```
 
-Python modules now live together under `app/`. Keep their relative layout intact. Terminal startup from the main folder is `python app/audit_log.py`. Program startup still anchors saved evidence and policies to the main folder; moving code did not move, reset or duplicate any account database. Close older app instances before launching the reorganized version.
+Keep the launchers and folders together. Use **Open BanShield.bat** for normal startup; you do not need to open the Python files. Saved evidence lives in the main folder, outside `app/`. See the backup instructions before moving the installation to another computer.
 
-For GitHub, upload the **app folder with all its modules**, both .bat launchers, START HERE.txt, README.md, requirements.txt, .gitignore and the policy instructions/templates. Earlier instructions naming individual .py files refer to those same files now inside app/. Never upload data/, account-logs/, the log library, private analysis bundles, backups or secrets. extras/ is optional legacy material and is not used by the desktop program.
 
-## Pre-upload verification
+## Large timelines and reliability
 
-See TESTING.md for the bounded stress and regression results. Large timelines render 50 entries initially; use **Load next 50 entries** to see more. Search still checks the whole selected log and cluster statistics still cover all current attachments. Local tests passed on the documented Windows environment; live provider API access and independent security auditing are outside those results.
+See TESTING.md for verification scope and limitations. Large timelines render 50 entries initially; use **Load next 50 entries** to see more. Search still checks the whole selected log and cluster statistics still cover all current attachments. Local tests passed on the documented Windows environment; live provider API access and independent security auditing are outside those results.
