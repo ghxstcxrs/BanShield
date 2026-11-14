@@ -8,7 +8,7 @@ from network_evidence import parse_capture
 from email_evidence import parse_email
 from visual_clusters import cluster_submissions
 from privacy_tools import inspect_metadata, public_manifest, export_public
-from PySide6.QtCore import Qt, QDateTime, QUrl
+from PySide6.QtCore import Qt, QDateTime, QDate, QTime, QUrl
 from PySide6.QtGui import QPixmap, QDesktopServices, QFontDatabase, QFont
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QComboBox, QScrollArea, QFrame, QDialog, QFormLayout, QTextEdit, QDateTimeEdit, QFileDialog, QMessageBox, QListWidget, QDialogButtonBox, QSizePolicy, QTabWidget, QInputDialog, QCheckBox, QProgressDialog)
 
@@ -289,6 +289,21 @@ class LogLibrary:
         if not name or len(name)>120:raise ValueError('Enter a name between 1 and 120 characters.')
         with self.db:self.db.execute('UPDATE logs SET name=? WHERE id=?',(name,lid))
 
+class LocalDateTimeInput(QLineEdit):
+    """Plain editable clock text: no segmented spinbox or auto-correction."""
+    def __init__(self,value=None):
+        super().__init__();self.setPlaceholderText('YYYY-MM-DD HH:MM:SS (24-hour)')
+        self.setToolTip('Type or paste the whole local date and time. Accepts 2026-11-10 13:18:00 or 2026-11-10 01:18:00 PM. Nothing is changed until you save.')
+        self.setDateTime(value or QDateTime.currentDateTime())
+    def setDateTime(self,value):self.setText(value.toString('yyyy-MM-dd HH:mm:ss'))
+    def dateTime(self):
+        text=self.text().strip()
+        for fmt in ('%Y-%m-%d %H:%M:%S','%Y-%m-%d %I:%M:%S %p','%Y-%m-%d %H:%M','%Y-%m-%dT%H:%M:%S'):
+            try:dt=datetime.strptime(text.upper(),fmt)
+            except ValueError:continue
+            return QDateTime(QDate(dt.year,dt.month,dt.day),QTime(dt.hour,dt.minute,dt.second))
+        return QDateTime()
+
 class EntryDialog(QDialog):
     def __init__(self, parent, entry=None):
         self.entry=entry;self.existing_files=[]
@@ -299,19 +314,11 @@ class EntryDialog(QDialog):
         layout.addWidget(plain('Describe the event and attach its supporting screenshots.','color:#a4aaaf;'))
         form=QFormLayout(); form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         self.title=QLineEdit();self.title.setPlaceholderText('A brief factual title');form.addRow('Title',self.title)
-        self.event=QDateTimeEdit(QDateTime.currentDateTime());self.event.setCalendarPopup(True);self.event.setKeyboardTracking(False);self.event.setDisplayFormat('yyyy-MM-dd hh:mm:ss AP');form.addRow('Event date and time  ·  local time',self.event)
+        self.event=LocalDateTimeInput();form.addRow('Event date and time · local time · type or paste YYYY-MM-DD HH:MM:SS',self.event)
         self.certainty=QComboBox();self.certainty.addItems(['Exact as reported','Estimated','Unknown']);self.certainty.currentTextChanged.connect(lambda s:self.event.setEnabled(s!='Unknown'));form.addRow('Time certainty',self.certainty)
         self.source=QLineEdit();self.source.setPlaceholderText('Document, URL, person, device, or timestamp context');form.addRow('Source and context',self.source)
         self.facts=QTextEdit();self.facts.setAcceptRichText(False);self.facts.setPlaceholderText('What you directly saw, heard, or received');self.facts.setMinimumHeight(110);form.addRow('Factual description',self.facts)
         self.notes=QTextEdit();self.notes.setAcceptRichText(False);self.notes.setPlaceholderText('Explanation, uncertainties, and follow-up');self.notes.setMinimumHeight(90);form.addRow('Notes and explanation  ·  optional',self.notes)
-        self.ai_fields={};ai_notes_widget=QWidget();ai_layout=QVBoxLayout(ai_notes_widget);ai_layout.setContentsMargins(0,0,0,0);ai_layout.setSpacing(8)
-        for provider,color in (('Gemini','#b6a3ed'),('ChatGPT','#8bcbb0'),('Grok','#edbd83')):
-            ai_layout.addWidget(plain(provider,f'color:{color};font-weight:700;font-size:12px;'))
-            editor=QTextEdit();editor.setAcceptRichText(False);editor.setFixedHeight(76)
-            editor.setStyleSheet(f'border:1px solid {color};border-radius:6px;padding:7px;')
-            editor.setPlaceholderText(f'Add {provider} notes…')
-            self.ai_fields[provider]=editor;ai_layout.addWidget(editor)
-        form.addRow('AI cross check notes',ai_notes_widget)
         layout.addLayout(form)
         row=QHBoxLayout();row.addWidget(button('+ Attach screenshots',self.attach,True));row.addWidget(button('Remove selected',self.remove,True));layout.addLayout(row)
         self.files=QListWidget();self.files.setMaximumHeight(95);layout.addWidget(self.files)
@@ -322,7 +329,6 @@ class EntryDialog(QDialog):
             self.setWindowTitle('Edit audit entry')
             self.title.setText(entry['title']);self.source.setText(entry['source'])
             self.facts.setPlainText(entry['facts']);self.notes.setPlainText(entry['notes'])
-            for provider,editor in self.ai_fields.items():editor.setPlainText(entry.get('ai_notes',{}).get(provider,''))
             if entry['event_at']:
                 self.event.setDateTime(QDateTime.fromSecsSinceEpoch(int(datetime.fromisoformat(entry['event_at']).timestamp())))
             self.certainty.setCurrentText(entry['certainty'])
@@ -342,12 +348,13 @@ class EntryDialog(QDialog):
             else:self.paths.pop(i-len(self.existing_files))
             self.files.takeItem(i)
     def validate(self):
+        if self.certainty.currentText()!='Unknown' and not self.event.dateTime().isValid():
+            QMessageBox.warning(self,'Invalid date or time','Enter a valid local date and time, for example 2026-11-10 13:18:00 or 2026-11-10 01:18:00 PM. Your text has not been changed.');self.event.setFocus();return
         if not self.title.text().strip() or not self.facts.toPlainText().strip():
             QMessageBox.warning(self,'Missing information','Enter a title and factual description.');return
         self.accept()
-    def ai_values(self):
-        return {provider:editor.toPlainText().strip() for provider,editor in self.ai_fields.items() if editor.toPlainText().strip()}
     def values(self):
+        if self.certainty.currentText()!='Unknown' and not self.event.dateTime().isValid():raise ValueError('Enter a valid local event date and time.')
         event=None if self.certainty.currentText()=='Unknown' else datetime.fromtimestamp(self.event.dateTime().toSecsSinceEpoch()).astimezone().isoformat(timespec='seconds')
         if self.entry and self.entry['event_at'] and event and datetime.fromisoformat(event)==datetime.fromisoformat(self.entry['event_at']):event=self.entry['event_at']
         return (self.title.text().strip(),event,self.certainty.currentText(),self.source.text().strip(),self.facts.toPlainText().strip(),self.notes.toPlainText().strip(),self.paths)
@@ -370,7 +377,7 @@ class Window(QMainWindow):
             self.log_selector=QComboBox();self.log_selector.setMinimumWidth(240);self.log_selector.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
             self.load_log_choices();self.log_selector.currentIndexChanged.connect(self.switch_log);logrow.addWidget(self.log_selector,1)
             logrow.addWidget(button('+ New audit log',self.create_log));logrow.addWidget(button('Rename',self.rename_log,True));outer.addLayout(logrow)
-        processing_row=QHBoxLayout();processing_row.addWidget(button('Process existing attachments',self.process_existing,True));processing_row.addWidget(plain('Fill missing hashes and metadata in the selected log','font-size:11px;color:#a4aaaf;'));processing_row.addWidget(button('Text evidence analysis',self.text_analysis,True));processing_row.addWidget(button('HAR / API capture guide',self.capture_guide,True));processing_row.addStretch();outer.addLayout(processing_row)
+        processing_row=QHBoxLayout();processing_row.addWidget(button('Process existing attachments',self.process_existing,True));processing_row.addWidget(plain('Fill missing hashes and metadata in the selected log','font-size:11px;color:#a4aaaf;'));processing_row.addWidget(button('API cross-checks · Gemini / ChatGPT',self.text_analysis,True));processing_row.addWidget(button('HAR / API capture guide',self.capture_guide,True));processing_row.addStretch();outer.addLayout(processing_row)
 
         tools=QHBoxLayout();self.search=QLineEdit();self.search.setPlaceholderText('Search notes, titles, sources, and evidence…');self.search.textChanged.connect(self.refresh);tools.addWidget(self.search,1)
         self.sort=QComboBox();self.sort.addItems(['Newest event first','Oldest event first']);self.sort.currentIndexChanged.connect(self.refresh);tools.addWidget(self.sort)
@@ -414,7 +421,10 @@ class Window(QMainWindow):
     def refresh(self,*args):
         if args or not hasattr(self,'_visible_limit'):self._visible_limit=50
         rows=self.store.list(self.search.text(),self.sort.currentIndex()==0)
-        _,cluster_summary,cluster_lookup=cluster_submissions(self.store.list())
+        all_entries=self.store.list()
+        _,cluster_summary,cluster_lookup=cluster_submissions(all_entries)
+        from api_cross_checks import load_cross_checks
+        self.api_checks=load_cross_checks(self.store.data,self.store.db,all_entries)
         for entry in rows:
             for file in entry['files']:file['visual_cluster']=cluster_lookup.get(file['id'],{})
         total=self.store.db.execute('SELECT count(*) FROM entries').fetchone()[0]
@@ -447,18 +457,22 @@ class Window(QMainWindow):
         if e['notes']:
             l.addWidget(plain('Notes and explanation','font-size:12px;font-weight:700;'))
             note=plain(e['notes']);note.setStyleSheet('background:#2d3134;border:1px solid #41474c;border-radius:7px;padding:13px;font-size:13px;');l.addWidget(note)
-        if any(e.get('ai_notes',{}).values()):
-            l.addWidget(plain('AI cross check notes','font-size:12px;font-weight:700;'))
-            for provider,color,bg,border in (('Gemini','#c9b9f3','#302b3b','#514364'),('ChatGPT','#a1ddbf','#263830','#3f6350'),('Grok','#f0ce9f','#3b3227','#67543a')):
-                value=e['ai_notes'].get(provider,'').strip()
-                if not value:continue
-                card=QFrame();card.setObjectName('providerNote');card.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Maximum)
-                card.setStyleSheet(f'QFrame#providerNote{{background:{bg};border:1px solid {border};border-radius:7px;}}')
+        generated=self.api_checks.get(e['id'],[]) if hasattr(self,'api_checks') else []
+        if generated:
+            l.addWidget(plain('API cross-checks · read only','font-size:12px;font-weight:700;'))
+            for check in generated[:6]:
+                provider='Gemini' if check['provider']=='gemini' else 'ChatGPT / OpenAI'
+                color,bg,border=('#c9b9f3','#302b3b','#514364') if check['provider']=='gemini' else ('#a1ddbf','#263830','#3f6350')
+                card=QFrame();card.setObjectName('apiCheck');card.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Maximum)
+                card.setStyleSheet(f'QFrame#apiCheck{{background:{bg};border:1px solid {border};border-radius:7px;}}')
                 note_layout=QVBoxLayout(card);note_layout.setContentsMargins(12,8,12,9);note_layout.setSpacing(4)
-                note_layout.addWidget(plain(provider,f'background:transparent;color:{color};font-size:11px;font-weight:700;'))
-                note_text=plain(value,'background:transparent;color:#e6e7e8;font-size:12px;')
-                note_text.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred)
-                note_layout.addWidget(note_text);l.addWidget(card)
+                note_layout.addWidget(plain(provider+' · '+check['model']+' · '+display_time(check['generated_at']),f'background:transparent;color:{color};font-size:11px;font-weight:700;'))
+                note_layout.addWidget(plain(check['finding']['statement'],'background:transparent;font-size:12px;'))
+                note_layout.addWidget(plain('Rubric '+str(check['finding']['rubric_score'])+'/100 · saved analysis snapshot; rerun after evidence changes','background:transparent;color:#a4aaaf;font-size:10px;'))
+                note_layout.addWidget(button('View generated finding',lambda checked=False,value=check:self.view_api_finding(value),True));l.addWidget(card)
+            if len(generated)>6:l.addWidget(plain('Showing the latest 6 matching findings. Full reports remain in the private analysis folder.','font-size:10px;color:#a4aaaf;'))
+        if any(e.get('ai_notes',{}).values()):
+            l.addWidget(button('View legacy manual notes (not API output)',lambda checked=False,entry=e:self.view_legacy_notes(entry),True),0,Qt.AlignmentFlag.AlignLeft)
         for f in e['files']:
             path=self.store.data/f['path'];thumb=QPixmap(str(path));image=QPushButton();image.setProperty('secondary',True);image.setFixedSize(240,145)
             if not thumb.isNull():
@@ -504,7 +518,7 @@ class Window(QMainWindow):
             for revision in e['revisions']:
                 before=json.loads(revision['before_json']);after=json.loads(revision['after_json'])
                 fields.update(k for k in before if before[k]!=after[k])
-            names={'title':'Title','event_at':'Event timestamp','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'AI cross check notes'}
+            names={'title':'Title','event_at':'Event timestamp','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'Legacy manual AI notes'}
             summary='Edited '+display_time(e['revisions'][-1]['edited_at'])+'  ·  '+str(len(e['revisions']))+' saved edit(s)'
             l.addWidget(plain(summary,'color:#d3c99f;font-size:11px;'))
             l.addWidget(plain('Changed: '+', '.join(names[k] for k in names if k in fields),'color:#a4aaaf;font-size:11px;'))
@@ -514,7 +528,7 @@ class Window(QMainWindow):
         dialog=EntryDialog(self,entry)
         if dialog.exec()==QDialog.DialogCode.Accepted:
             try:
-                changed=self.store.edit(entry['id'],*dialog.values(),[f['id'] for f in dialog.existing_files],expected=self.store.snapshot(entry),ai_notes=dialog.ai_values())
+                changed=self.store.edit(entry['id'],*dialog.values(),[f['id'] for f in dialog.existing_files],expected=self.store.snapshot(entry))
                 self.refresh();self.status.setText('Changes saved with edit history  ·  '+display_time(now()) if changed else 'No changes to save.')
             except Exception as e:QMessageBox.critical(self,'Could not save changes',str(e))
     def history(self,entry):
@@ -522,7 +536,7 @@ class Window(QMainWindow):
         outer=QVBoxLayout(d);outer.addWidget(plain('Edit history','font-size:22px;font-weight:700;'))
         outer.addWidget(plain('Original recorded time: '+display_time(entry['recorded_at']),'color:#a4aaaf;'))
         scroll=QScrollArea();scroll.setWidgetResizable(True);body=QWidget();layout=QVBoxLayout(body)
-        names={'title':'Title','event_at':'Event timestamp','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'AI cross check notes'}
+        names={'title':'Title','event_at':'Event timestamp','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'Legacy manual AI notes'}
         for index,r in reversed(list(enumerate(entry['revisions'],1))):
             layout.addWidget(plain(f"EDIT {index}  ·  {display_time(r['edited_at'])}",'font-weight:700;color:#d3c99f;'))
             before=json.loads(r['before_json']);after=json.loads(r['after_json'])
@@ -551,7 +565,7 @@ class Window(QMainWindow):
     def new_entry(self):
         dialog=EntryDialog(self)
         if dialog.exec()==QDialog.DialogCode.Accepted:
-            try:self.store.add(*dialog.values(),ai_notes=dialog.ai_values());self.refresh();self.status.setText('Entry saved  ·  '+display_time(now()))
+            try:self.store.add(*dialog.values());self.refresh();self.status.setText('Entry saved  ·  '+display_time(now()))
             except Exception as e:QMessageBox.critical(self,'Could not save',str(e))
     def amend(self,eid):
         d=QDialog(self);d.setWindowTitle('Add a correction or note');d.resize(540,340);l=QVBoxLayout(d);l.addWidget(plain('The original entry stays visible. Your addition receives its own timestamp.'));text=QTextEdit();text.setAcceptRichText(False);l.addWidget(text);buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel);l.addWidget(buttons);buttons.accepted.connect(lambda:d.accept() if text.toPlainText().strip() else None);buttons.rejected.connect(d.reject)
@@ -574,9 +588,16 @@ class Window(QMainWindow):
             self.status.setText(f"Attachment processing: {result['processed']} updated, {result['failed']} failed.")
             QMessageBox.information(self,'Attachment processing complete',message)
         except Exception as e:progress.close();QMessageBox.critical(self,'Processing failed',str(e))
+    def view_legacy_notes(self,entry):
+        d=QDialog(self);d.setWindowTitle('Legacy manual notes — not API generated');d.resize(640,440);layout=QVBoxLayout(d)
+        layout.addWidget(plain('Historical user-entered notes, preserved for reference. These are not verified API cross-checks and cannot be edited here.'))
+        text=QTextEdit();text.setReadOnly(True);text.setPlainText(json.dumps(entry['ai_notes'],ensure_ascii=False,indent=2));layout.addWidget(text);layout.addWidget(button('Close',d.accept,True));d.exec()
+    def view_api_finding(self,value):
+        d=QDialog(self);d.setWindowTitle('Read-only API cross-check');d.resize(780,620);layout=QVBoxLayout(d);text=QTextEdit();text.setReadOnly(True);text.setPlainText(json.dumps(value,ensure_ascii=False,indent=2));layout.addWidget(text);layout.addWidget(button('Close',d.accept,True));d.exec()
     def text_analysis(self):
         from analysis_ui import AnalysisDialog
         AnalysisDialog(self.store.data,ROOT,self).exec()
+        self.refresh()
     def attach_email(self,eid):
         choice,ok=QInputDialog.getItem(self,'Private email evidence','Export the original .eml from your mail client (Download original / Save as). A screenshot omits transport headers. Choose:', ['Import original .eml','Paste raw SMTP headers'],0,False)
         if not ok:return

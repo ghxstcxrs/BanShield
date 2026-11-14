@@ -26,7 +26,7 @@ class AnalysisDialog(QDialog):
         try:self.policy.setPlainText(read_policy(self.root))
         except ValueError as e:self.policy.setPlaceholderText(str(e))
         self.policy.textChanged.connect(self.invalidate_review);self.manifest.textChanged.connect(self.invalidate_review)
-        row=QHBoxLayout();row.addWidget(QLabel('Provider:'));self.provider=QComboBox();self.provider.addItem('OpenAI','openai');self.provider.addItem('Google / Gemini','gemini');row.addWidget(self.provider);row.addWidget(QLabel('Model ID:'));self.model=QLineEdit(os.environ.get('BANSHIELD_OPENAI_MODEL',''));self.model.setPlaceholderText('Structured Outputs-capable model available to your API account');row.addWidget(self.model);layout.addLayout(row)
+        row=QHBoxLayout();row.addWidget(QLabel('Provider:'));self.provider=QComboBox();self.provider.addItem('ChatGPT / OpenAI','openai');self.provider.addItem('Google / Gemini','gemini');row.addWidget(self.provider);row.addWidget(QLabel('Model ID:'));self.model=QLineEdit(os.environ.get('BANSHIELD_OPENAI_MODEL',''));self.model.setPlaceholderText('Structured Outputs-capable model available to your API account');row.addWidget(self.model);layout.addLayout(row)
         self.consent=QCheckBox('I reviewed both documents and authorize sending this text to the selected API provider.');layout.addWidget(self.consent)
         self.send=QPushButton('Send reviewed text for structured analysis');self.send.clicked.connect(self.send_analysis);layout.addWidget(self.send)
         self.status=QLabel('');self.status.setWordWrap(True);layout.addWidget(self.status)
@@ -36,11 +36,15 @@ class AnalysisDialog(QDialog):
         self.models[self.active_provider]=self.model.text();self.active_provider=self.provider.currentData()
         self.model.setText(self.models[self.active_provider]);self.model.setPlaceholderText('Enter a JSON Schema-capable '+self.provider.currentText()+' model ID')
         self.invalidate_review();self.status.setText('Selected: '+self.provider.currentText()+' · Set '+('OPENAI_API_KEY' if self.active_provider=='openai' else 'GEMINI_API_KEY (or GOOGLE_API_KEY)')+' before launching. No automatic provider fallback. Review that provider’s data-use terms.')
+        self.send.setEnabled(bool(self.provider_key()))
     def invalidate_review(self):
         self.result=None
         if hasattr(self,'consent'):self.consent.setChecked(False)
+    def provider_key(self):
+        return os.environ.get('OPENAI_API_KEY','') if self.provider.currentData()=='openai' else (os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY',''))
     def busy(self,value):
         for b in self.buttons+[self.send,self.provider,self.model]:b.setDisabled(value)
+        if not value:self.send.setEnabled(bool(self.provider_key()))
     def run_job(self,fn,callback):
         self.busy(True);self.job=Job(fn,self)
         self.job.done.connect(callback);self.job.failed.connect(lambda error:QMessageBox.warning(self,'Analysis task failed',error))
