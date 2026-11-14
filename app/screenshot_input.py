@@ -10,7 +10,7 @@ class ScreenshotDropList(QListWidget):
     pasteRequested=Signal()
     def __init__(self):
         super().__init__();self.setAcceptDrops(True);self.viewport().setAcceptDrops(True)
-        self.setToolTip('Drop image files here. Ctrl+V pastes a PNG/JPEG file or clipboard image as PNG.')
+        self.setToolTip('Drop image or video files here. Ctrl+V pastes a PNG/JPEG file or clipboard image as PNG.')
         self.setStyleSheet('QListWidget{border:1px dashed #72816e;border-radius:7px;padding:8px;min-height:65px;}')
     def dragEnterEvent(self,event):
         if local_paths(event.mimeData()):event.acceptProposedAction()

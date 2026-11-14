@@ -3,6 +3,7 @@ import json, hashlib, os, tempfile, zipfile
 from pathlib import Path
 from datetime import datetime
 from PIL import Image, ImageOps, ExifTags
+from video_evidence import is_video
 from visual_clusters import cluster_submissions, csv_text
 
 def inspect_metadata(saved_path, source_path=None):
@@ -46,7 +47,7 @@ def public_manifest(entries):
     # files, revisions, AI notes, metadata values, account names, or local paths.
     rows,summary,_=cluster_submissions(entries)
     return {'submissions':rows,'summary':summary,'format':'banshield-public-dataset','version':1,'entries':[
-        {'id':f'event-{i:04d}','event_at':e['event_at'],'event_timezone':e.get('event_timezone'),'time_certainty':e['certainty'],'attachment_count':len(e['files'])}
+        {'id':f'event-{i:04d}','event_at':e['event_at'],'event_timezone':e.get('event_timezone'),'time_certainty':e['certainty'],'attachment_count':len(e['files']),'video_count':sum(is_video(f) for f in e['files']),'image_count':sum(not is_video(f) for f in e['files'])}
         for i,e in enumerate(entries,1)],'privacy_note':'Free text and original attachments omitted. Event times may be identifying; review before sharing.'}
 
 def export_public(destination, manifest, reviewed_images):

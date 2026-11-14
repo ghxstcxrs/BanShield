@@ -11,7 +11,7 @@ def apply_rubric(findings,policy,manifest):
     evidence={}
     for e in manifest['entries']:
         evidence[e['id']]=values({k:v for k,v in e.items() if k not in ('screenshots','network_evidence')})
-        for item in e['screenshots']+e['network_evidence']:evidence[item['evidence_id']]=values(item)
+        for item in e['screenshots']+e.get('videos',[])+e['network_evidence']:evidence[item['evidence_id']]=values(item)
         for a in e['addenda']:evidence[a['id']]=values(a)
     for f in findings['findings']:
         requested=f['rubric_band'];band=requested;reasons=[]

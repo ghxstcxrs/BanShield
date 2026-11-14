@@ -6,6 +6,7 @@ from PIL import Image, ImageOps
 import imagehash
 from network_evidence import parse_capture
 from email_evidence import parse_email
+from video_evidence import VIDEO_EXTENSIONS,is_video,video_metadata
 from screenshot_input import ScreenshotDropList,local_paths
 from event_timezones import parse_wall,resolve_wall,zone,fixed_zone,available_timezones,detect_local_zone
 from visual_clusters import cluster_submissions
@@ -30,6 +31,11 @@ def perceptual_hashes(path):
         return (str(imagehash.phash(image,hash_size=8,highfreq_factor=4)),
                 str(imagehash.dhash(image,hash_size=8)),
                 'ImageHash '+imagehash.__version__+'; Pillow '+Image.__version__+'; pHash 64-bit highfreq_factor=4; dHash horizontal 64-bit; EXIF transpose; RGB; first frame',now())
+
+def attachment_details(path,original=None):
+    if Path(path).suffix.lower() in VIDEO_EXTENSIONS:
+        return (None,None,None,None,json.dumps(video_metadata(path),ensure_ascii=False))
+    return (*perceptual_hashes(path),json.dumps(inspect_metadata(path,original),ensure_ascii=False))
 
 def plain(text='', style=''):
     w = QLabel(text); w.setTextFormat(Qt.TextFormat.PlainText)
@@ -80,7 +86,7 @@ class Store:
                 with original.open('rb') as src, dest.open('xb') as target:
                     copied.append(dest); digest=hashlib.sha256()
                     while block:=src.read(1024*1024): target.write(block); digest.update(block)
-                records.append((fid,eid,original.name,'attachments/'+filename,digest.hexdigest(),timestamp,*perceptual_hashes(dest),json.dumps(inspect_metadata(dest,original),ensure_ascii=False)))
+                records.append((fid,eid,original.name,'attachments/'+filename,digest.hexdigest(),timestamp,*attachment_details(dest,original)))
             with self.db:
                 self.db.execute('INSERT INTO entries(id,title,event_at,certainty,recorded_at,source,facts,notes) VALUES(?,?,?,?,?,?,?,?)',(eid,title,event_at,certainty,timestamp,source,facts,notes))
                 self.db.execute('UPDATE entries SET ai_notes=?,event_timezone=? WHERE id=?',(json.dumps(ai_notes or {},ensure_ascii=False),event_timezone,eid))
@@ -125,7 +131,7 @@ class Store:
                 with original.open('rb') as src,dest.open('xb') as target:
                     copied.append(dest);digest=hashlib.sha256()
                     while block:=src.read(1024*1024):target.write(block);digest.update(block)
-                records.append((fid,eid,original.name,rel,digest.hexdigest(),timestamp,*perceptual_hashes(dest),json.dumps(inspect_metadata(dest,original),ensure_ascii=False)))
+                records.append((fid,eid,original.name,rel,digest.hexdigest(),timestamp,*attachment_details(dest,original)))
             after={'title':title,'event_at':event_at,'certainty':certainty,'source':source,'facts':facts,'notes':notes,
                    'screenshots':[{k:f[k] for k in ('id','name','path','sha256')} for f in current['files'] if f['id'] in keep_ids]}
             after['event_timezone']=current.get('event_timezone') if event_timezone is None else event_timezone
@@ -171,6 +177,13 @@ class Store:
         result={'processed':0,'already_complete':0,'failed':0,'cancelled':False,'issues':[]}
         for i,f in enumerate(files):
             if progress and not progress(i,len(files),f['name']):result['cancelled']=True;break
+            if is_video(f):
+                try:
+                    with (self.data/f['path']).open('rb') as stream:verified=hashlib.file_digest(stream,'sha256').hexdigest()==f['sha256']
+                    if not verified:raise ValueError('Video SHA-256 mismatch')
+                    result['already_complete']+=1
+                except Exception as exc:result['failed']+=1;result['issues'].append(f['name']+': '+str(exc))
+                continue
             missing=[k for k in ('phash','dhash','hash_method','hash_computed_at','metadata_json') if not f.get(k)]
             if not missing:result['already_complete']+=1;continue
             try:
@@ -215,7 +228,8 @@ class Store:
                     for f in self.db.execute('SELECT * FROM files'):
                         source=self.data/f['path']
                         if not source.is_file(): raise ValueError('Missing attachment: '+f['name'])
-                        if hashlib.sha256(source.read_bytes()).hexdigest()!=f['sha256']: raise ValueError('Attachment has changed: '+f['name'])
+                        with source.open('rb') as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
+                        if digest!=f['sha256']: raise ValueError('Attachment has changed: '+f['name'])
                         z.write(source,'data/'+f['path'])
                     for capture in self.db.execute('SELECT * FROM network_captures'):
                         source=self.data/capture['path']
@@ -339,8 +353,8 @@ class EntryDialog(QDialog):
         self.facts=QTextEdit();self.facts.setAcceptRichText(False);self.facts.setPlaceholderText('What you directly saw, heard, or received');self.facts.setMinimumHeight(110);form.addRow('Factual description',self.facts)
         self.notes=QTextEdit();self.notes.setAcceptRichText(False);self.notes.setPlaceholderText('Explanation, uncertainties, and follow-up');self.notes.setMinimumHeight(90);form.addRow('Notes and explanation  ·  optional',self.notes)
         layout.addLayout(form)
-        row=QHBoxLayout();row.addWidget(button('+ Attach screenshots',self.attach,True));row.addWidget(button('Paste screenshot',self.paste_screenshot,True));row.addWidget(button('Remove selected',self.remove,True));layout.addLayout(row)
-        layout.addWidget(plain('Drag image files into the area below · Ctrl+V here or Ctrl+Shift+V anywhere to paste a screenshot','font-size:10px;color:#a4aaaf;'))
+        row=QHBoxLayout();row.addWidget(button('+ Attach images / video',self.attach,True));row.addWidget(button('Paste screenshot',self.paste_screenshot,True));row.addWidget(button('Remove selected',self.remove,True));layout.addLayout(row)
+        layout.addWidget(plain('Drag image or video files into the area below · Ctrl+V here or Ctrl+Shift+V anywhere to paste a screenshot','font-size:10px;color:#a4aaaf;'))
         self.files=ScreenshotDropList();self.files.setMaximumHeight(120);self.files.filesDropped.connect(self.add_screenshot_paths);self.files.pasteRequested.connect(self.paste_screenshot);layout.addWidget(self.files)
         self._clipboard_temp=None
         self.paste_shortcut=QShortcut(QKeySequence('Ctrl+Shift+V'),self);self.paste_shortcut.activated.connect(self.paste_screenshot)
@@ -375,7 +389,7 @@ class EntryDialog(QDialog):
         if name!=self.detected_timezone and not self.timezone_override.isChecked():self.timezone_override.setChecked(True)
 
     def attach(self):
-        paths,_=QFileDialog.getOpenFileNames(self,'Attach screenshots','','Images (*.png *.jpg *.jpeg *.webp *.bmp)')
+        paths,_=QFileDialog.getOpenFileNames(self,'Attach evidence','','Images and videos (*.png *.jpg *.jpeg *.webp *.bmp *.mp4 *.m4v *.mov *.webm *.mkv *.avi)')
         self.add_screenshot_paths(paths)
     def add_screenshot_paths(self,paths,clipboard=False):
         errors=[]
@@ -384,6 +398,13 @@ class EntryDialog(QDialog):
             path=Path(raw)
             try:
                 if not path.is_file():raise ValueError('not a file')
+                video=path.suffix.lower() in VIDEO_EXTENSIONS
+                if video and not clipboard:
+                    if path.stat().st_size>1024*1024*1024:raise ValueError('video exceeds 1 GB')
+                    video_metadata(path)
+                    resolved=str(path.resolve())
+                    if os.path.normcase(resolved) not in {os.path.normcase(str(Path(p).resolve())) for p in self.paths}:self.paths.append(resolved);self.files.addItem(path.name+' (video)')
+                    continue
                 if path.stat().st_size>50*1024*1024:raise ValueError('image exceeds 50 MB')
                 if clipboard and path.suffix.lower() not in ('.png','.jpg','.jpeg'):raise ValueError('clipboard files must be PNG or JPEG')
                 with Image.open(path) as image:
@@ -502,7 +523,7 @@ class Window(QMainWindow):
             for file in entry['files']:file['visual_cluster']=cluster_lookup.get(file['id'],{})
         total=self.store.db.execute('SELECT count(*) FROM entries').fetchone()[0]
         rate=cluster_summary['exact_pattern_match_rate'];rate_text=f'{rate:.1%}' if rate is not None else 'N/A'
-        self.count.setText(f"{total} entries · {cluster_summary['total_submissions']} submissions · {cluster_summary['unique_visual_clusters']} visual clusters · {rate_text} exact pattern repeat rate")
+        self.count.setText(f"{total} entries · {cluster_summary['total_submissions']} image submissions · {cluster_summary['total_video_records']} videos · {cluster_summary['unique_visual_clusters']} visual clusters · {rate_text} exact pattern repeat rate")
         self.count.setToolTip(cluster_summary['exact_pattern_definition']+' '+cluster_summary['matching_rule'])
         body=QWidget();layout=QVBoxLayout(body);layout.setContentsMargins(0,5,5,5);layout.setSpacing(0)
         if not rows:
@@ -549,6 +570,14 @@ class Window(QMainWindow):
         if any(e.get('ai_notes',{}).values()):
             l.addWidget(button('View legacy manual notes (not API output)',lambda checked=False,entry=e:self.view_legacy_notes(entry),True),0,Qt.AlignmentFlag.AlignLeft)
         for f in e['files']:
+            if is_video(f):
+                meta=json.loads(f['metadata_json']);path=self.store.data/f['path'];duration=meta.get('duration_seconds_estimated')
+                l.addWidget(plain('Video evidence · '+f['name'],'font-size:12px;font-weight:700;'))
+                l.addWidget(plain(str(meta.get('width'))+' × '+str(meta.get('height'))+' · '+(f'{duration:.1f} seconds (estimated)' if duration else 'duration unknown')+' · '+f"{meta.get('size_bytes',0)/1048576:.1f} MB",'font-size:11px;color:#a4aaaf;'))
+                l.addWidget(button('Open video in your media player',lambda checked=False,p=path:QDesktopServices.openUrl(QUrl.fromLocalFile(str(p))),True),0,Qt.AlignmentFlag.AlignLeft)
+                l.addWidget(plain('SHA 256 '+f['sha256']+' · attached '+display_time(f['added_at']),'font-size:9px;color:#8f989f;'))
+                l.addWidget(plain('Private original · not visually clustered, transcribed, scrubbed or included in public export.','font-size:10px;color:#e1b887;'))
+                continue
             path=self.store.data/f['path'];thumb=QPixmap(str(path));image=QPushButton();image.setProperty('secondary',True);image.setFixedSize(240,145)
             if not thumb.isNull():
                 from PySide6.QtGui import QIcon
@@ -593,7 +622,7 @@ class Window(QMainWindow):
             for revision in e['revisions']:
                 before=json.loads(revision['before_json']);after=json.loads(revision['after_json'])
                 fields.update(k for k in before if before[k]!=after[k])
-            names={'title':'Title','event_at':'Event timestamp','event_timezone':'Event timezone','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'Legacy manual AI notes'}
+            names={'title':'Title','event_at':'Event timestamp','event_timezone':'Event timezone','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Evidence attachments','ai_notes':'Legacy manual AI notes'}
             summary='Edited '+display_time(e['revisions'][-1]['edited_at'])+'  ·  '+str(len(e['revisions']))+' saved edit(s)'
             l.addWidget(plain(summary,'color:#d3c99f;font-size:11px;'))
             l.addWidget(plain('Changed: '+', '.join(names[k] for k in names if k in fields),'color:#a4aaaf;font-size:11px;'))
@@ -611,7 +640,7 @@ class Window(QMainWindow):
         outer=QVBoxLayout(d);outer.addWidget(plain('Edit history','font-size:22px;font-weight:700;'))
         outer.addWidget(plain('Original recorded time: '+display_time(entry['recorded_at']),'color:#a4aaaf;'))
         scroll=QScrollArea();scroll.setWidgetResizable(True);body=QWidget();layout=QVBoxLayout(body)
-        names={'title':'Title','event_at':'Event timestamp','event_timezone':'Event timezone','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'Legacy manual AI notes'}
+        names={'title':'Title','event_at':'Event timestamp','event_timezone':'Event timezone','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Evidence attachments','ai_notes':'Legacy manual AI notes'}
         for index,r in reversed(list(enumerate(entry['revisions'],1))):
             layout.addWidget(plain(f"EDIT {index}  ·  {display_time(r['edited_at'])}",'font-weight:700;color:#d3c99f;'))
             before=json.loads(r['before_json']);after=json.loads(r['after_json'])

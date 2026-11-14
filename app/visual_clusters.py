@@ -1,6 +1,7 @@
 """Deterministic 64-bit visual-hash clustering; no image or identity data exported."""
 import csv,io,re
 from collections import Counter
+from video_evidence import is_video
 
 def hamming(a,b):
     if not re.fullmatch('[0-9a-fA-F]{16}',a or '') or not re.fullmatch('[0-9a-fA-F]{16}',b or ''):raise ValueError('Expected two 64-bit hexadecimal hashes.')
@@ -11,6 +12,7 @@ def cluster_submissions(entries,threshold=6):
     items=[]
     for ei,e in enumerate(entries,1):
         for fi,f in enumerate(e['files'],1):
+            if is_video(f):continue
             valid=all(re.fullmatch('[0-9a-fA-F]{16}',f.get(k) or '') for k in ('phash','dhash')) and bool(f.get('hash_method'))
             items.append({'event_id':f'event-{ei:04d}','submission_id':f'submission-{len(items)+1:05d}','file_id':f['id'],'file':f,'valid':valid,'p':int(f['phash'],16) if valid else 0,'d':int(f['dhash'],16) if valid else 0})
     parent=list(range(len(items)))
@@ -41,7 +43,7 @@ def cluster_submissions(entries,threshold=6):
             row.update(cluster_id=cid,cluster_size=len(indices),hash_status='available',phash_distance_to_representative=hamming(f['phash'],representative['phash']),dhash_distance_to_representative=hamming(f['dhash'],representative['dhash']),exact_pattern_group_size=counts[(f['hash_method'],f['phash'].lower(),f['dhash'].lower())])
         else:row.update(cluster_id='',cluster_size=0,hash_status='missing_or_incompatible',phash_distance_to_representative='',dhash_distance_to_representative='',exact_pattern_group_size=0)
         rows.append(row)
-    summary={'total_entries':len(entries),'total_submissions':len(items),'hashable_submissions':hashable,'unclustered_submissions':len(items)-hashable,'unique_visual_clusters':len(ordered),'exact_pattern_duplicate_submissions':exact_duplicates,'exact_pattern_match_rate':exact_duplicates/hashable if hashable else None,'exact_byte_duplicate_submissions':sum(n-1 for n in sha.values()),'hamming_threshold_each_hash':threshold,'matching_rule':'Both pHash and dHash distance <= threshold, identical hash method; connected components (transitive).','exact_pattern_definition':'Repeated identical pHash AND dHash pairs beyond the first, divided by hashable submissions. Hash equality does not prove identical pixels or bytes.','cluster_id_scope':'Deterministic within this dataset; IDs may change when dataset membership changes. One submission means one current attachment; retired attachments excluded.'}
+    summary={'total_video_records':sum(is_video(f) for e in entries for f in e['files']),'total_entries':len(entries),'total_submissions':len(items),'hashable_submissions':hashable,'unclustered_submissions':len(items)-hashable,'unique_visual_clusters':len(ordered),'exact_pattern_duplicate_submissions':exact_duplicates,'exact_pattern_match_rate':exact_duplicates/hashable if hashable else None,'exact_byte_duplicate_submissions':sum(n-1 for n in sha.values()),'hamming_threshold_each_hash':threshold,'matching_rule':'Both pHash and dHash distance <= threshold, identical hash method; connected components (transitive).','exact_pattern_definition':'Repeated identical pHash AND dHash pairs beyond the first, divided by hashable submissions. Hash equality does not prove identical pixels or bytes.','cluster_id_scope':'Deterministic within this dataset; IDs may change when dataset membership changes. One submission means one current attachment; retired attachments excluded.'}
     return rows,summary,{a['file_id']:rows[i] for i,a in enumerate(items)}
 
 def csv_text(rows,fields=None):
