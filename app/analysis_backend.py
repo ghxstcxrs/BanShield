@@ -15,7 +15,7 @@ def build_manifest(data_dir,include_response_bodies=False):
     engine=None;engine_error=None;items=[]
     try:
         for row in db.execute('SELECT * FROM entries ORDER BY COALESCE(event_at,recorded_at),id'):
-            e=dict(row);item={k:e[k] for k in ('id','title','event_at','certainty','recorded_at','source','facts','notes')};item['screenshots']=[];item['network_evidence']=[]
+            e=dict(row);item={k:e[k] for k in ('id','title','event_at','event_timezone','certainty','recorded_at','source','facts','notes')};item['screenshots']=[];item['network_evidence']=[]
             item['addenda']=[dict(r) for r in db.execute('SELECT id,text,recorded_at FROM addenda WHERE entry_id=?',(e['id'],))]
             for frow in db.execute('SELECT * FROM files WHERE entry_id=? AND active=1',(e['id'],)):
                 f=dict(frow);path=(data_dir/f['path']).resolve()

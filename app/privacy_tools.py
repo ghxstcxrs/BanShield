@@ -46,7 +46,7 @@ def public_manifest(entries):
     # files, revisions, AI notes, metadata values, account names, or local paths.
     rows,summary,_=cluster_submissions(entries)
     return {'submissions':rows,'summary':summary,'format':'banshield-public-dataset','version':1,'entries':[
-        {'id':f'event-{i:04d}','event_at':e['event_at'],'time_certainty':e['certainty'],'attachment_count':len(e['files'])}
+        {'id':f'event-{i:04d}','event_at':e['event_at'],'event_timezone':e.get('event_timezone'),'time_certainty':e['certainty'],'attachment_count':len(e['files'])}
         for i,e in enumerate(entries,1)],'privacy_note':'Free text and original attachments omitted. Event times may be identifying; review before sharing.'}
 
 def export_public(destination, manifest, reviewed_images):

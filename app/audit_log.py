@@ -6,10 +6,12 @@ from PIL import Image, ImageOps
 import imagehash
 from network_evidence import parse_capture
 from email_evidence import parse_email
+from screenshot_input import ScreenshotDropList,local_paths
+from event_timezones import parse_wall,resolve_wall,zone,fixed_zone,available_timezones,detect_local_zone
 from visual_clusters import cluster_submissions
 from privacy_tools import inspect_metadata, public_manifest, export_public
-from PySide6.QtCore import Qt, QDateTime, QDate, QTime, QUrl
-from PySide6.QtGui import QPixmap, QDesktopServices, QFontDatabase, QFont
+from PySide6.QtCore import Qt, QDateTime, QDate, QTime, QUrl, QTimeZone
+from PySide6.QtGui import QPixmap, QDesktopServices, QFontDatabase, QFont, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QComboBox, QScrollArea, QFrame, QDialog, QFormLayout, QTextEdit, QDateTimeEdit, QFileDialog, QMessageBox, QListWidget, QDialogButtonBox, QSizePolicy, QTabWidget, QInputDialog, QCheckBox, QProgressDialog)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -63,8 +65,10 @@ class Store:
         for column in ('phash','dhash','hash_method','hash_computed_at','metadata_json'):
             if column not in {r[1] for r in self.db.execute('PRAGMA table_info(files)')}:
                 self.db.execute(f'ALTER TABLE files ADD COLUMN {column} TEXT')
+        if 'event_timezone' not in {r[1] for r in self.db.execute('PRAGMA table_info(entries)')}:
+            self.db.execute('ALTER TABLE entries ADD COLUMN event_timezone TEXT')
         self.db.commit()
-    def add(self, title, event_at, certainty, source, facts, notes, paths, ai_notes=None):
+    def add(self, title, event_at, certainty, source, facts, notes, paths, ai_notes=None, event_timezone=None):
         eid='ENT-'+uuid.uuid4().hex[:12].upper(); timestamp=now(); copied=[]
         try:
             records=[]
@@ -79,7 +83,7 @@ class Store:
                 records.append((fid,eid,original.name,'attachments/'+filename,digest.hexdigest(),timestamp,*perceptual_hashes(dest),json.dumps(inspect_metadata(dest,original),ensure_ascii=False)))
             with self.db:
                 self.db.execute('INSERT INTO entries(id,title,event_at,certainty,recorded_at,source,facts,notes) VALUES(?,?,?,?,?,?,?,?)',(eid,title,event_at,certainty,timestamp,source,facts,notes))
-                self.db.execute('UPDATE entries SET ai_notes=? WHERE id=?',(json.dumps(ai_notes or {},ensure_ascii=False),eid))
+                self.db.execute('UPDATE entries SET ai_notes=?,event_timezone=? WHERE id=?',(json.dumps(ai_notes or {},ensure_ascii=False),event_timezone,eid))
                 self.db.executemany('INSERT INTO files(id,entry_id,name,path,sha256,added_at,phash,dhash,hash_method,hash_computed_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)',records)
             return eid
         except Exception:
@@ -99,10 +103,11 @@ class Store:
     @staticmethod
     def snapshot(entry):
         result={k:entry[k] for k in ('title','event_at','certainty','source','facts','notes')}
+        result['event_timezone']=entry.get('event_timezone')
         result['ai_notes']=entry.get('ai_notes',{})
         result['screenshots']=[{k:f[k] for k in ('id','name','path','sha256')} for f in entry['files']]
         return result
-    def edit(self, eid, title, event_at, certainty, source, facts, notes, paths, keep_ids, expected=None, ai_notes=None):
+    def edit(self, eid, title, event_at, certainty, source, facts, notes, paths, keep_ids, expected=None, ai_notes=None, event_timezone=None):
         if not title.strip() or not facts.strip(): raise ValueError('A title and factual description are required.')
         copied=[]
         try:
@@ -123,12 +128,13 @@ class Store:
                 records.append((fid,eid,original.name,rel,digest.hexdigest(),timestamp,*perceptual_hashes(dest),json.dumps(inspect_metadata(dest,original),ensure_ascii=False)))
             after={'title':title,'event_at':event_at,'certainty':certainty,'source':source,'facts':facts,'notes':notes,
                    'screenshots':[{k:f[k] for k in ('id','name','path','sha256')} for f in current['files'] if f['id'] in keep_ids]}
+            after['event_timezone']=current.get('event_timezone') if event_timezone is None else event_timezone
             after['ai_notes']=current['ai_notes'] if ai_notes is None else ai_notes
             after['screenshots'] += [dict(zip(('id','name','path','sha256'),(r[0],r[2],r[3],r[4]))) for r in records]
             if before==after:
                 self.db.rollback();return False
             self.db.execute('UPDATE entries SET title=?,event_at=?,certainty=?,source=?,facts=?,notes=? WHERE id=?',(title,event_at,certainty,source,facts,notes,eid))
-            self.db.execute('UPDATE entries SET ai_notes=? WHERE id=?',(json.dumps(after['ai_notes'],ensure_ascii=False),eid))
+            self.db.execute('UPDATE entries SET ai_notes=?,event_timezone=? WHERE id=?',(json.dumps(after['ai_notes'],ensure_ascii=False),after['event_timezone'],eid))
             for fid in active-set(keep_ids):self.db.execute('UPDATE files SET active=0 WHERE id=?',(fid,))
             self.db.executemany('INSERT INTO files(id,entry_id,name,path,sha256,added_at,phash,dhash,hash_method,hash_computed_at,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)',records)
             self.db.execute('INSERT INTO revisions VALUES(?,?,?,?,?)',(uuid.uuid4().hex,eid,timestamp,json.dumps(before,ensure_ascii=False),json.dumps(after,ensure_ascii=False)))
@@ -314,14 +320,30 @@ class EntryDialog(QDialog):
         layout.addWidget(plain('Describe the event and attach its supporting screenshots.','color:#a4aaaf;'))
         form=QFormLayout(); form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         self.title=QLineEdit();self.title.setPlaceholderText('A brief factual title');form.addRow('Title',self.title)
-        self.event=LocalDateTimeInput();form.addRow('Event date and time · local time · type or paste YYYY-MM-DD HH:MM:SS',self.event)
-        self.certainty=QComboBox();self.certainty.addItems(['Exact as reported','Estimated','Unknown']);self.certainty.currentTextChanged.connect(lambda s:self.event.setEnabled(s!='Unknown'));form.addRow('Time certainty',self.certainty)
+        self.event=LocalDateTimeInput();form.addRow('Event date and time · in the timezone below',self.event)
+        self.timezone=QComboBox();self.timezone.setEditable(True);self.timezone.addItems(sorted(available_timezones()))
+        self.detected_timezone,self.timezone_detection=detect_local_zone()
+        system_id=self.detected_timezone
+        self.timezone.setCurrentText(system_id)
+        self.timezone_override=QCheckBox('Override timezone for this entry')
+        form.addRow('Automatic timezone',plain(system_id+' · '+self.timezone_detection,'font-size:11px;color:#a4aaaf;'))
+        form.addRow('',self.timezone_override);form.addRow('Entry timezone · IANA name or UTC±HH:MM',self.timezone)
+        self.timezone_override.toggled.connect(self.timezone_mode_changed)
+        self.timezone.currentTextChanged.connect(self.timezone_selected)
+        form.addRow('',plain('New entries default to your computer’s timezone. An override affects this entry only. Changing the zone keeps the typed clock.','font-size:10px;color:#a4aaaf;'))
+        self.fold=QComboBox();self.fold.addItems(['Select only if this time occurs twice','First occurrence (before clocks move back)','Second occurrence (after clocks move back)']);form.addRow('Daylight saving overlap',self.fold)
+        self.event.setText(datetime.now(zone(system_id)).strftime('%Y-%m-%d %H:%M:%S'))
+
+        self.certainty=QComboBox();self.certainty.addItems(['Exact as reported','Estimated','Unknown']);self.certainty.currentTextChanged.connect(self.update_timezone_controls);form.addRow('Time certainty',self.certainty)
         self.source=QLineEdit();self.source.setPlaceholderText('Document, URL, person, device, or timestamp context');form.addRow('Source and context',self.source)
         self.facts=QTextEdit();self.facts.setAcceptRichText(False);self.facts.setPlaceholderText('What you directly saw, heard, or received');self.facts.setMinimumHeight(110);form.addRow('Factual description',self.facts)
         self.notes=QTextEdit();self.notes.setAcceptRichText(False);self.notes.setPlaceholderText('Explanation, uncertainties, and follow-up');self.notes.setMinimumHeight(90);form.addRow('Notes and explanation  ·  optional',self.notes)
         layout.addLayout(form)
-        row=QHBoxLayout();row.addWidget(button('+ Attach screenshots',self.attach,True));row.addWidget(button('Remove selected',self.remove,True));layout.addLayout(row)
-        self.files=QListWidget();self.files.setMaximumHeight(95);layout.addWidget(self.files)
+        row=QHBoxLayout();row.addWidget(button('+ Attach screenshots',self.attach,True));row.addWidget(button('Paste screenshot',self.paste_screenshot,True));row.addWidget(button('Remove selected',self.remove,True));layout.addLayout(row)
+        layout.addWidget(plain('Drag image files into the area below · Ctrl+V here or Ctrl+Shift+V anywhere to paste a screenshot','font-size:10px;color:#a4aaaf;'))
+        self.files=ScreenshotDropList();self.files.setMaximumHeight(120);self.files.filesDropped.connect(self.add_screenshot_paths);self.files.pasteRequested.connect(self.paste_screenshot);layout.addWidget(self.files)
+        self._clipboard_temp=None
+        self.paste_shortcut=QShortcut(QKeySequence('Ctrl+Shift+V'),self);self.paste_shortcut.activated.connect(self.paste_screenshot)
         layout.addWidget(plain('Screenshot copies are saved locally. Edits retain previous values and removed screenshots in the history.','color:#a4aaaf;font-size:11px;'))
         scroll.setWidget(body);outer.addWidget(scroll)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel);buttons.accepted.connect(self.validate);buttons.rejected.connect(self.reject);outer.addWidget(buttons)
@@ -329,34 +351,85 @@ class EntryDialog(QDialog):
             self.setWindowTitle('Edit audit entry')
             self.title.setText(entry['title']);self.source.setText(entry['source'])
             self.facts.setPlainText(entry['facts']);self.notes.setPlainText(entry['notes'])
+            self.timezone_override.setChecked(True)
             if entry['event_at']:
-                self.event.setDateTime(QDateTime.fromSecsSinceEpoch(int(datetime.fromisoformat(entry['event_at']).timestamp())))
+                saved=datetime.fromisoformat(entry['event_at']);selected=entry.get('event_timezone') or fixed_zone(saved)
+                self.timezone.setCurrentText(selected);local=saved.astimezone(zone(selected));self.event.setText(local.strftime('%Y-%m-%d %H:%M:%S'));self.fold.setCurrentIndex(local.fold+1)
             self.certainty.setCurrentText(entry['certainty'])
             self.existing_files=list(entry['files'])
             for f in self.existing_files:self.files.addItem(f['name']+'  (saved)')
 
+        self.update_timezone_controls()
+
+    def update_timezone_controls(self,*args):
+        known=self.certainty.currentText()!='Unknown'
+        self.event.setEnabled(known);self.fold.setEnabled(known);self.timezone_override.setEnabled(known)
+        self.timezone.setEnabled(known and self.timezone_override.isChecked())
+    def timezone_mode_changed(self,override):
+        if not override:
+            self.timezone.blockSignals(True);self.timezone.setCurrentText(self.detected_timezone);self.timezone.blockSignals(False)
+            self.fold.setCurrentIndex(0)
+        if hasattr(self,'certainty'):self.update_timezone_controls()
+    def timezone_selected(self,name):
+        # A programmatic selection also represents an explicit override.
+        if name!=self.detected_timezone and not self.timezone_override.isChecked():self.timezone_override.setChecked(True)
+
     def attach(self):
         paths,_=QFileDialog.getOpenFileNames(self,'Attach screenshots','','Images (*.png *.jpg *.jpeg *.webp *.bmp)')
-        for path in paths:
-            if path not in self.paths:
-                if QPixmap(path).isNull(): QMessageBox.warning(self,'Invalid image',f'Cannot read {Path(path).name}');continue
-                self.paths.append(path); self.files.addItem(Path(path).name)
+        self.add_screenshot_paths(paths)
+    def add_screenshot_paths(self,paths,clipboard=False):
+        errors=[]
+        allowed={'PNG','JPEG'} if clipboard else {'PNG','JPEG','WEBP','BMP'}
+        for raw in paths:
+            path=Path(raw)
+            try:
+                if not path.is_file():raise ValueError('not a file')
+                if path.stat().st_size>50*1024*1024:raise ValueError('image exceeds 50 MB')
+                if clipboard and path.suffix.lower() not in ('.png','.jpg','.jpeg'):raise ValueError('clipboard files must be PNG or JPEG')
+                with Image.open(path) as image:
+                    if image.format not in allowed:raise ValueError('unsupported image content; PNG or JPEG required for clipboard files' if clipboard else 'unsupported image format')
+                    image.verify()
+                if QPixmap(str(path)).isNull():raise ValueError('image cannot be displayed')
+                resolved=str(path.resolve())
+                if os.path.normcase(resolved) not in {os.path.normcase(str(Path(p).resolve())) for p in self.paths}:
+                    self.paths.append(resolved);self.files.addItem(path.name)
+            except (OSError,ValueError,Image.DecompressionBombError) as e:errors.append(path.name+': '+str(e))
+        if errors:QMessageBox.warning(self,'Some images were not attached','\n'.join(errors[:12]))
+    def paste_screenshot(self):
+        clipboard=QApplication.clipboard();mime=clipboard.mimeData()
+        paths=local_paths(mime)
+        if mime.hasUrls():
+            if not paths:QMessageBox.warning(self,'No local image','Clipboard links are not downloaded. Copy a local PNG/JPEG file or an image.');return
+            self.add_screenshot_paths(paths,clipboard=True);return
+        image=clipboard.image()
+        if image.isNull():QMessageBox.information(self,'No screenshot to paste','Copy an image or a PNG/JPEG file first. Text and web links are not uploaded.');return
+        if image.width()*image.height()>80_000_000:QMessageBox.warning(self,'Image too large','Clipboard images must be under 80 megapixels.');return
+        if self._clipboard_temp is None:
+            self._clipboard_temp=tempfile.TemporaryDirectory(prefix='banshield-clipboard-')
+            cleanup=self._clipboard_temp.cleanup;self.destroyed.connect(lambda *args:cleanup())
+        path=Path(self._clipboard_temp.name)/('clipboard-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:6]+'.png')
+        if not image.save(str(path),'PNG'):QMessageBox.warning(self,'Paste failed','Could not save the clipboard image as PNG.');return
+        self.add_screenshot_paths([str(path)],clipboard=True)
     def remove(self):
         i=self.files.currentRow()
         if i>=0:
             if i<len(self.existing_files):self.existing_files.pop(i)
             else:self.paths.pop(i-len(self.existing_files))
             self.files.takeItem(i)
+    def selected_event(self):
+        if self.certainty.currentText()=='Unknown':return None
+        fold=self.fold.currentIndex()-1 if self.fold.currentIndex()>0 else None
+        return resolve_wall(self.event.text(),self.timezone.currentText().strip(),fold)
     def validate(self):
-        if self.certainty.currentText()!='Unknown' and not self.event.dateTime().isValid():
-            QMessageBox.warning(self,'Invalid date or time','Enter a valid local date and time, for example 2026-11-10 13:18:00 or 2026-11-10 01:18:00 PM. Your text has not been changed.');self.event.setFocus();return
+        try:self.selected_event()
+        except ValueError as e:
+            QMessageBox.warning(self,'Check event time',str(e));self.event.setFocus();return
         if not self.title.text().strip() or not self.facts.toPlainText().strip():
             QMessageBox.warning(self,'Missing information','Enter a title and factual description.');return
         self.accept()
     def values(self):
-        if self.certainty.currentText()!='Unknown' and not self.event.dateTime().isValid():raise ValueError('Enter a valid local event date and time.')
-        event=None if self.certainty.currentText()=='Unknown' else datetime.fromtimestamp(self.event.dateTime().toSecsSinceEpoch()).astimezone().isoformat(timespec='seconds')
-        if self.entry and self.entry['event_at'] and event and datetime.fromisoformat(event)==datetime.fromisoformat(self.entry['event_at']):event=self.entry['event_at']
+        selected=self.selected_event();event=selected.isoformat(timespec='seconds') if selected else None
+        if self.entry and self.entry['event_at'] and event and self.timezone.currentText().strip()==(self.entry.get('event_timezone') or fixed_zone(datetime.fromisoformat(self.entry['event_at']))) and datetime.fromisoformat(event)==datetime.fromisoformat(self.entry['event_at']):event=self.entry['event_at']
         return (self.title.text().strip(),event,self.certainty.currentText(),self.source.text().strip(),self.facts.toPlainText().strip(),self.notes.toPlainText().strip(),self.paths)
 
 class ImageDialog(QDialog):
@@ -449,7 +522,9 @@ class Window(QMainWindow):
         rail=QWidget();rail.setFixedWidth(24);rl=QVBoxLayout(rail);rl.setContentsMargins(0,4,0,0);rl.setSpacing(6);rl.addWidget(plain('◇','font-family:Segoe UI Symbol;font-size:20px;color:#e3e7e9;'),0,Qt.AlignmentFlag.AlignHCenter);line=QFrame();line.setFrameShape(QFrame.Shape.VLine);line.setStyleSheet('color:#485057;');rl.addWidget(line,1,Qt.AlignmentFlag.AlignHCenter);row.addWidget(rail)
         content=QWidget();l=QVBoxLayout(content);l.setContentsMargins(0,0,0,28);l.setSpacing(8)
         l.addWidget(plain(e['title'],'font-weight:700;font-size:14px;'))
-        when='Event time unknown' if not e['event_at'] else display_time(e['event_at'])
+        when='Event time unknown'
+        if e['event_at']:
+            dt=datetime.fromisoformat(e['event_at']);when=dt.strftime('%b %d, %Y | %I:%M:%S %p UTC%z')+' · '+(e.get('event_timezone') or 'original recorded offset')
         if e['certainty']=='Estimated':when+='  ·  Estimated'
         l.addWidget(plain(when,'font-size:12px;color:#dde1e3;'))
         l.addWidget(plain(e['id']+('  ·  '+e['source'] if e['source'] else ''),'font-size:10px;color:#929da5;'))
@@ -518,7 +593,7 @@ class Window(QMainWindow):
             for revision in e['revisions']:
                 before=json.loads(revision['before_json']);after=json.loads(revision['after_json'])
                 fields.update(k for k in before if before[k]!=after[k])
-            names={'title':'Title','event_at':'Event timestamp','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'Legacy manual AI notes'}
+            names={'title':'Title','event_at':'Event timestamp','event_timezone':'Event timezone','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'Legacy manual AI notes'}
             summary='Edited '+display_time(e['revisions'][-1]['edited_at'])+'  ·  '+str(len(e['revisions']))+' saved edit(s)'
             l.addWidget(plain(summary,'color:#d3c99f;font-size:11px;'))
             l.addWidget(plain('Changed: '+', '.join(names[k] for k in names if k in fields),'color:#a4aaaf;font-size:11px;'))
@@ -528,7 +603,7 @@ class Window(QMainWindow):
         dialog=EntryDialog(self,entry)
         if dialog.exec()==QDialog.DialogCode.Accepted:
             try:
-                changed=self.store.edit(entry['id'],*dialog.values(),[f['id'] for f in dialog.existing_files],expected=self.store.snapshot(entry))
+                changed=self.store.edit(entry['id'],*dialog.values(),[f['id'] for f in dialog.existing_files],expected=self.store.snapshot(entry),event_timezone=dialog.timezone.currentText().strip())
                 self.refresh();self.status.setText('Changes saved with edit history  ·  '+display_time(now()) if changed else 'No changes to save.')
             except Exception as e:QMessageBox.critical(self,'Could not save changes',str(e))
     def history(self,entry):
@@ -536,7 +611,7 @@ class Window(QMainWindow):
         outer=QVBoxLayout(d);outer.addWidget(plain('Edit history','font-size:22px;font-weight:700;'))
         outer.addWidget(plain('Original recorded time: '+display_time(entry['recorded_at']),'color:#a4aaaf;'))
         scroll=QScrollArea();scroll.setWidgetResizable(True);body=QWidget();layout=QVBoxLayout(body)
-        names={'title':'Title','event_at':'Event timestamp','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'Legacy manual AI notes'}
+        names={'title':'Title','event_at':'Event timestamp','event_timezone':'Event timezone','certainty':'Time certainty','source':'Source and context','facts':'Factual description','notes':'Notes and explanation','screenshots':'Screenshots','ai_notes':'Legacy manual AI notes'}
         for index,r in reversed(list(enumerate(entry['revisions'],1))):
             layout.addWidget(plain(f"EDIT {index}  ·  {display_time(r['edited_at'])}",'font-weight:700;color:#d3c99f;'))
             before=json.loads(r['before_json']);after=json.loads(r['after_json'])
@@ -558,14 +633,14 @@ class Window(QMainWindow):
                     for fid in new.keys()-old.keys():layout.addWidget(plain('Added: '+new[fid]['name']))
                 else:
                     def text(value):return display_time(value) if key=='event_at' else (value or '(empty)')
-                    layout.addWidget(plain('Before: '+text(before[key]),'background:#2d3134;padding:10px;border-radius:5px;'))
-                    layout.addWidget(plain('After: '+text(after[key]),'background:#303a31;padding:10px;border-radius:5px;'))
+                    layout.addWidget(plain('Before: '+text(before.get(key)),'background:#2d3134;padding:10px;border-radius:5px;'))
+                    layout.addWidget(plain('After: '+text(after.get(key)),'background:#303a31;padding:10px;border-radius:5px;'))
             layout.addSpacing(20)
         scroll.setWidget(body);outer.addWidget(scroll);outer.addWidget(button('Close',d.accept,True));d.exec()
     def new_entry(self):
         dialog=EntryDialog(self)
         if dialog.exec()==QDialog.DialogCode.Accepted:
-            try:self.store.add(*dialog.values());self.refresh();self.status.setText('Entry saved  ·  '+display_time(now()))
+            try:self.store.add(*dialog.values(),event_timezone=dialog.timezone.currentText().strip());self.refresh();self.status.setText('Entry saved  ·  '+display_time(now()))
             except Exception as e:QMessageBox.critical(self,'Could not save',str(e))
     def amend(self,eid):
         d=QDialog(self);d.setWindowTitle('Add a correction or note');d.resize(540,340);l=QVBoxLayout(d);l.addWidget(plain('The original entry stays visible. Your addition receives its own timestamp.'));text=QTextEdit();text.setAcceptRichText(False);l.addWidget(text);buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel);l.addWidget(buttons);buttons.accepted.connect(lambda:d.accept() if text.toPlainText().strip() else None);buttons.rejected.connect(d.reject)
