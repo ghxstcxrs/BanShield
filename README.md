@@ -328,3 +328,25 @@ The entry form no longer has editable Gemini, ChatGPT or Grok note fields. Cross
 Eligible findings from successfully saved, indexed reports appear on entries referenced by the finding's evidence IDs. These cards are read-only and show provider, model, generation time and rubric score. The app verifies the saved report against its indexed SHA-256 and validates the scored findings before displaying them. Modified/missing reports, unsupported providers and below-threshold findings are not presented as cross-check cards. Saved findings describe an analysis snapshot and may predate current edits; rerun after changing evidence. Closing the analysis window refreshes the timeline. Detailed findings and full reports remain private.
 
 Previously entered manual notes are preserved behind **View legacy manual notes (not API output)** and in private backups/edit history. Editing an entry does not clear them. They cannot be added or modified from the current form and are excluded from the model evidence manifest. Ordinary factual notes and explanations remain editable. Existing saved API results remain readable without making another API call. ChatGPT/OpenAI API access is separate from a ChatGPT subscription.
+
+## Choose an event timezone
+
+In **New entry** or **Edit entry**, enter the event date/time and choose its **Timezone**. The timezone applies to the clock you typed; changing it keeps the typed clock and changes the corresponding instant. Use an IANA name such as `America/New_York`, `Europe/London` or `Asia/Tokyo`, choose `UTC`, or type a fixed offset such as `UTC-05:00` or `UTC+05:30`. IANA zones apply the daylight-saving rules for the event date; fixed offsets do not.
+
+New entries start in the computer's detected zone where available, otherwise UTC. Verify the selection rather than assuming the default is the source's timezone. When a clock repeats during the fall daylight-saving transition, select **First occurrence** or **Second occurrence**. Nonexistent spring-forward times are rejected. Unknown event times remain unknown.
+
+Saved entries retain the selected zone and actual UTC offset. The timeline displays that recorded clock/offset instead of converting it to the viewer's computer timezone. Timezone changes appear in edit history and analysis manifests. Public dataset JSON also includes the selected event zone, so review it along with timestamps before sharing. Old entries retain their original recorded offset; editing opens them with that fixed offset unless a named zone was already stored. Saving an edit can explicitly record your zone selection. Original event times are not rewritten automatically. Recorded/imported/computed audit timestamps remain separate from the manually selected event timezone.
+
+## Automatic timezone with an entry override
+
+New entries detect this computer's timezone automatically and show it beside **Automatic timezone**. Leave **Override timezone for this entry** unchecked to use that detected zone. Check it to select another IANA region or fixed UTC offset for that entry. Unchecking it returns to the detected zone without changing your typed clock. Overrides do not become defaults for other new entries.
+
+Saved entries open with their recorded zone as an explicit selection, even if the computer's zone has since changed. Existing timestamps are not silently reinterpreted. If no regional timezone can be detected, the app discloses that it is using the computer's current fixed UTC offset; choose a regional override when historical daylight-saving rules matter. DST ambiguity and nonexistent-time validation still apply. Detection reflects the computer's settings, not proof of the user's physical location.
+
+## Drag screenshots or paste from the clipboard
+
+In New entry or Edit entry, drag local image files into the attachment area, use **Paste screenshot**, press **Ctrl+V** while the attachment list is focused, or press **Ctrl+Shift+V** anywhere in the entry dialog. Normal text-field paste remains unchanged.
+
+Clipboard images are encoded into new PNG files. Copied local clipboard files must have a PNG/JPG/JPEG extension and decode as PNG or JPEG; renamed unsupported formats are rejected. File-picker and drag-and-drop attachment support PNG, JPEG, WebP and BMP. Web links are not downloaded. Unreadable images, oversized images and unsupported clipboard contents are reported. File attachments are limited to 50 MB each; direct clipboard images to 80 megapixels.
+
+Pasted images are staged temporarily until the entry is saved. Press Save to keep them; the saved copy then uses normal SHA-256, perceptual hashes, metadata inspection and edit-history handling. Temporary clipboard files are cleaned up when the dialog is destroyed. A clipboard image is a new PNG representation and generally cannot preserve the source file's original EXIF, file bytes or capture metadata. Keep and attach the original file when those details matter. Dragged/copied file originals are copied without re-encoding. Repeating the same file path in one dialog is ignored; separate captures or separate clipboard pastes can still count as additional submissions.
