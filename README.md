@@ -99,7 +99,7 @@ After updating BanShield, make a private backup, install the updated requirement
 - **Timestamped entries** — record event times separately from when entries were saved, and mark times as reported, estimated, or unknown.
 - **Screenshot evidence** — attach images, keep local copies, preview them, and record SHA-256 hashes.
 - **Notes and explanations** — keep factual observations separate from interpretation and follow-up.
-- **AI comparison notes** — manually add Gemini, ChatGPT, and Grok notes in compact, color-coded cards.
+- **API cross-checks** — generate read-only Gemini or ChatGPT/OpenAI findings from a reviewed evidence bundle. Manual AI-note entry and Grok are not supported.
 - **Edit history** — edit saved entries and review timestamped before-and-after values, including screenshot additions and removals. Removed screenshot copies are retained.
 - **Addenda** — append dated corrections or additional context.
 - **Search and sorting** — search records and display events newest or oldest first.
@@ -128,7 +128,7 @@ Double-click **Setup BanShield.bat** once to install dependencies, then **Open B
 1. Open the app and select an audit log in the **Account / Audit Log** dropdown. Existing records appear in **Original audit log**.
 2. Choose **New audit log** to create a separate log for another account. Use **Rename** to change its name.
 3. Choose **New entry**, enter a title and factual description, set the event timestamp, and optionally add notes and screenshots.
-4. Add any AI comparison notes under the labeled Gemini, ChatGPT, and Grok fields. These are manual notes; BanShield does not contact those services or generate responses.
+4. For optional AI cross-checks, open **API cross-checks · Gemini / ChatGPT**, configure the selected provider, and run a reviewed analysis. There are no manual AI-note fields. Existing manual notes are retained as read-only legacy reference.
 5. Save the entry. Use **Edit entry** for later changes and **View edit history** to inspect previous values. Use **Add correction or note** for an addendum.
 6. Choose **Export backup** to save the currently selected log. Export other logs separately.
 
@@ -319,3 +319,12 @@ Keep the launchers and folders together. Use **Open BanShield.bat** for normal s
 ## Large timelines and reliability
 
 See TESTING.md for verification scope and limitations. Large timelines render 50 entries initially; use **Load next 50 entries** to see more. Search still checks the whole selected log and cluster statistics still cover all current attachments. Local tests passed on the documented Windows environment; live provider API access and independent security auditing are outside those results.
+
+
+## API-only cross-checks
+
+The entry form no longer has editable Gemini, ChatGPT or Grok note fields. Cross-checks are generated only by the selected Gemini or OpenAI API through the reviewed analysis workflow; Grok is not supported. In the analysis window, choose Gemini or ChatGPT/OpenAI, configure its environment key and model, build and review the evidence bundle and manual policy baseline, and explicitly authorize sending. The send button is disabled while the selected provider has no configured key. A configured key is not a guarantee of valid credentials, model access, credits or quota.
+
+Eligible findings from successfully saved, indexed reports appear on entries referenced by the finding's evidence IDs. These cards are read-only and show provider, model, generation time and rubric score. The app verifies the saved report against its indexed SHA-256 and validates the scored findings before displaying them. Modified/missing reports, unsupported providers and below-threshold findings are not presented as cross-check cards. Saved findings describe an analysis snapshot and may predate current edits; rerun after changing evidence. Closing the analysis window refreshes the timeline. Detailed findings and full reports remain private.
+
+Previously entered manual notes are preserved behind **View legacy manual notes (not API output)** and in private backups/edit history. Editing an entry does not clear them. They cannot be added or modified from the current form and are excluded from the model evidence manifest. Ordinary factual notes and explanations remain editable. Existing saved API results remain readable without making another API call. ChatGPT/OpenAI API access is separate from a ChatGPT subscription.
