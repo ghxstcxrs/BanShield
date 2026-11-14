@@ -5,3 +5,4 @@ jsonschema>=4.26,<5
 rapidocr_onnxruntime==1.2.3
 pydantic>=2.12,<3
 tzdata>=2026.2
+opencv-python>=4.5,<6

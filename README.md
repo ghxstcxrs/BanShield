@@ -97,7 +97,7 @@ After updating BanShield, make a private backup, install the updated requirement
 
 - **Separate account logs** — create named audit logs, switch between them, and return to older records.
 - **Timestamped entries** — record event times separately from when entries were saved, and mark times as reported, estimated, or unknown.
-- **Screenshot evidence** — attach images, keep local copies, preview them, and record SHA-256 hashes.
+- **Image and video evidence** — attach screenshots or recordings, preserve local copies and SHA-256 hashes, and open videos in your media player.
 - **Notes and explanations** — keep factual observations separate from interpretation and follow-up.
 - **API cross-checks** — generate read-only Gemini or ChatGPT/OpenAI findings from a reviewed evidence bundle. Manual AI-note entry and Grok are not supported.
 - **Edit history** — edit saved entries and review timestamped before-and-after values, including screenshot additions and removals. Removed screenshot copies are retained.
@@ -350,3 +350,12 @@ In New entry or Edit entry, drag local image files into the attachment area, use
 Clipboard images are encoded into new PNG files. Copied local clipboard files must have a PNG/JPG/JPEG extension and decode as PNG or JPEG; renamed unsupported formats are rejected. File-picker and drag-and-drop attachment support PNG, JPEG, WebP and BMP. Web links are not downloaded. Unreadable images, oversized images and unsupported clipboard contents are reported. File attachments are limited to 50 MB each; direct clipboard images to 80 megapixels.
 
 Pasted images are staged temporarily until the entry is saved. Press Save to keep them; the saved copy then uses normal SHA-256, perceptual hashes, metadata inspection and edit-history handling. Temporary clipboard files are cleaned up when the dialog is destroyed. A clipboard image is a new PNG representation and generally cannot preserve the source file's original EXIF, file bytes or capture metadata. Keep and attach the original file when those details matter. Dragged/copied file originals are copied without re-encoding. Repeating the same file path in one dialog is ignored; separate captures or separate clipboard pastes can still count as additional submissions.
+
+
+## Video evidence
+
+Use **Attach images / video** or drag a recording into the attachment area when adding or editing an entry. Supported extensions are MP4, M4V, MOV, WebM, MKV and AVI, up to 1 GB per file. The file must contain a frame the installed decoder can read; codec support varies. Invalid or unsupported recordings are rejected. Clipboard paste remains image-only PNG/JPEG.
+
+BanShield saves a byte-for-byte private copy, computes SHA-256, and shows dimensions, size and estimated container duration. **Open video in your media player** uses the computer's default player. Videos do not receive screenshot pHash/dHash or participate in visual image clusters. The overview counts video records separately. Process existing attachments verifies video SHA-256 rather than trying to OCR or hash video frames.
+
+Video originals, including recordings later removed from an entry, remain in private evidence storage and backups. Removal is tracked in edit history. Videos can contain faces, voices, usernames, messages and identifying container metadata. BanShield does not scrub, redact, transcribe, or extract a verified creation clock from videos, and does not include video bytes in public dataset export. Public JSON includes only aggregate attachment/video counts. The AI evidence manifest includes video identifiers, hashes, descriptive metadata and integrity status, with an explicit notice that the visual/audio content was not analyzed. No frames or recordings are sent to the text analysis API.
